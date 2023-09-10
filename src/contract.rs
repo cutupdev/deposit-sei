@@ -1,6 +1,6 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult};
+use cosmwasm_std::{coins, BankMsg, Addr, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult};
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
@@ -8,7 +8,7 @@ use crate::msg::{ExecuteMsg, GetCountResponse, InstantiateMsg, QueryMsg};
 use crate::state::{State, STATE};
 
 // version info for migration info
-const CONTRACT_NAME: &str = "crates.io:Sei-Shield-Contract";
+const CONTRACT_NAME: &str = "crates.io:SeiShieldContract";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -21,6 +21,7 @@ pub fn instantiate(
     let state = State {
         count: msg.count,
         owner: info.sender.clone(),
+        amount: msg.amount,
     };
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     STATE.save(deps.storage, &state)?;
@@ -28,7 +29,8 @@ pub fn instantiate(
     Ok(Response::new()
         .add_attribute("method", "instantiate")
         .add_attribute("owner", info.sender)
-        .add_attribute("count", msg.count.to_string()))
+        .add_attribute("count", msg.count.to_string())
+        .add_attribute("amount", msg.amount.to_string()))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -41,6 +43,9 @@ pub fn execute(
     match msg {
         ExecuteMsg::Increment {} => execute::increment(deps),
         ExecuteMsg::Reset { count } => execute::reset(deps, info, count),
+        ExecuteMsg::DepositSeller { amount } => execute::deposit(deps, info, amount),
+        ExecuteMsg::DepositBuyer { amount } => execute::deposit(deps, info, amount),
+        ExecuteMsg::Transfer { bWallet, sWallet, amount } => execute::transfer(deps, info, bWallet, sWallet, amount),
     }
 }
 
@@ -65,6 +70,61 @@ pub mod execute {
             Ok(state)
         })?;
         Ok(Response::new().add_attribute("action", "reset"))
+    }
+
+    pub fn deposit(deps: DepsMut, info: MessageInfo, amount: u128) -> Result<Response, ContractError> {
+        //let messages = BankMsg::Send::new();
+
+        STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
+            if info.sender != state.owner {
+                return Err(ContractError::Unauthorized {});
+            }
+
+            //let mut vec = Vec::<Coin>::new();
+            //vec.push(amount);
+
+            let _messages = BankMsg::Send {
+                to_address: info.sender.to_string(),
+                amount: coins(amount, "usei"),
+            };
+
+            state.amount -= amount;
+
+            Ok(state)
+        })?;
+        Ok(Response::new()
+            //.add_messages(messages)
+            .add_attribute("action", "deposit")
+            .add_attribute("owner", info.sender)
+            .add_attribute("amount", amount.to_string()))
+    }
+
+    pub fn transfer(deps: DepsMut, info: MessageInfo, _bWallet: Addr, sWallet: Addr, amount: u128) -> Result<Response, ContractError> {
+        //let messages = BankMsg::Send::new();
+
+        STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
+            if info.sender != state.owner {
+                return Err(ContractError::Unauthorized {});
+            }
+
+            //let mut vec = Vec::<Coin>::new();
+            //vec.push(amount);
+
+            let _messages = BankMsg::Send {
+                to_address: sWallet.to_string(),
+                amount: coins(amount, "usei"),
+            };
+
+            state.amount = amount;
+
+            Ok(state)
+        })?;
+        Ok(Response::new()
+            //.add_messages(messages)
+            .add_attribute("action", "transfer")
+            .add_attribute("owner", info.sender)
+            .add_attribute("seller", sWallet.to_string())
+            .add_attribute("amount", amount.to_string()))
     }
 }
 
@@ -94,7 +154,7 @@ mod tests {
     fn proper_initialization() {
         let mut deps = mock_dependencies();
 
-        let msg = InstantiateMsg { count: 17 };
+        let msg = InstantiateMsg { count: 17, amount: 1 };
         let info = mock_info("creator", &coins(1000, "earth"));
 
         // we can just call .unwrap() to assert this was a success
@@ -111,7 +171,7 @@ mod tests {
     fn increment() {
         let mut deps = mock_dependencies();
 
-        let msg = InstantiateMsg { count: 17 };
+        let msg = InstantiateMsg { count: 17, amount: 1 };
         let info = mock_info("creator", &coins(2, "token"));
         let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
 
@@ -130,7 +190,7 @@ mod tests {
     fn reset() {
         let mut deps = mock_dependencies();
 
-        let msg = InstantiateMsg { count: 17 };
+        let msg = InstantiateMsg { count: 17, amount: 1 };
         let info = mock_info("creator", &coins(2, "token"));
         let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
 
